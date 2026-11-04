@@ -3,6 +3,7 @@
 # Copyright (c) 2026 Yang Xiwen
 import regex
 import itertools
+from collections import Counter
 
 def read_to_buffer(path):
     with open(path, "r") as f:
@@ -24,12 +25,16 @@ def build_initial_vocab(_input, special_tokens):
     init.update({ idx + 256: val.encode() for idx, val in enumerate(special_tokens) })
     return init
 
-def build_pairs(token_list):
+def build_pairs(token_list, pretoken_counter):
     _dict = {}
     for token in token_list:
+        key = b''.join(token)
+        addition = pretoken_counter[key]
+        #print(key)
+        assert addition > 0
         for pair in itertools.pairwise(token):
             _dict.setdefault(pair, 0)
-            _dict[pair] += 1
+            _dict[pair] += addition
 
     return _dict
 
@@ -62,14 +67,16 @@ def train_bpe(input_path, vocab_size, special_tokens):
     buffer = read_to_buffer(input_path)
     split = split_at_special_tokens(buffer, special_tokens)
     split_as_bytes = [ i.encode() for i in split ]
-    token_list = [ [ b for b in iter_bytes(token) ] for token in pre_tokenization(split_as_bytes) ]
+    pretoken_counter = Counter(pre_tokenization(split_as_bytes))
+    #print(f"{len(pretoken_counter)=}")
+    token_list = [ [ b for b in iter_bytes(token) ] for token in pretoken_counter.keys() ]
     #print(f"After pre_tokenize(), {len(token_list)=}")
     vocab = build_initial_vocab(token_list, special_tokens)
     #print(f"After build_initial_vocab(), {len(vocab)=}")
     merges = []
     #print(f"{vocab_size=}, {len(vocab)=}")
     while len(vocab) < vocab_size:
-        pairs = build_pairs(token_list)
+        pairs = build_pairs(token_list, pretoken_counter)
         #print(f"{len(pairs)=}")
         pair = max(pairs.items(), key = lambda p: (p[1], p[0]))
         merges.append((pair[0][0], pair[0][1]))
