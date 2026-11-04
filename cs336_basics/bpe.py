@@ -15,7 +15,7 @@ def split_at_special_tokens(_input, special_tokens):
     return cur
 
 def pre_tokenization(_input):
-    GPT_PATTERN = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+    GPT_PATTERN = rb"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
     for i in _input:
         yield from regex.findall(GPT_PATTERN, i)
 
@@ -61,7 +61,8 @@ def iter_bytes(b):
 def train_bpe(input_path, vocab_size, special_tokens):
     buffer = read_to_buffer(input_path)
     split = split_at_special_tokens(buffer, special_tokens)
-    token_list = [ [ b for b in iter_bytes(token.encode()) ] for token in pre_tokenization(split) ]
+    split_as_bytes = [ i.encode() for i in split ]
+    token_list = [ [ b for b in iter_bytes(token) ] for token in pre_tokenization(split_as_bytes) ]
     #print(f"After pre_tokenize(), {len(token_list)=}")
     vocab = build_initial_vocab(token_list, special_tokens)
     #print(f"After build_initial_vocab(), {len(vocab)=}")
