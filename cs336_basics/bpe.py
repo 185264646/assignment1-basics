@@ -26,23 +26,34 @@ def build_initial_vocab(_input, special_tokens: List[str]):
     init.update({ idx + 256: val.encode() for idx, val in enumerate(special_tokens) })
     return init
 
-PairCount = Dict[Tuple[bytes, bytes], int]
-PairToAffectedTokens = Dict[Tuple[bytes, bytes], Set[int]]
+class PairState:
+    weighted_count: int
+    affected_token_indices: List[int]
+    last_seen_token_index: int
 
-def build_pairs(token_list: List[List[bytes]], count_list: List[int]) -> Tuple[PairCount, PairToAffectedTokens]:
-    pair_count: PairCount = {}
-    pair_to_affected_tokens: PairToAffectedTokens = {}
+Pairs = Dict[Tuple[bytes, bytes], PairState]
+
+def build_pairs(token_list: List[List[bytes]], count_list: List[int]) -> Pairs:
+    pairs: Pairs = {}
     for idx, token in enumerate(token_list):
         addition = count_list[idx]
         for pair in itertools.pairwise(token):
-            pair_count.setdefault(pair, 0)
-            pair_to_affected_tokens.setdefault(pair, set())
-            pair_count[pair] += addition
-            pair_to_affected_tokens[pair].add(idx)
+            pair_state = pairs.get(pair)
+            if pair_state is None:
+                new = PairState()
+                new.weighted_count = addition
+                new.affected_token_indices = [idx]
+                new.last_seen_token_index = idx
+                pairs[pair] = new
+            else:
+                pair_state.weighted_count += addition
+                if pair_state.last_seen_token_index != idx:
+                    pair_state.last_seen_token_index = idx
+                    pair_state.affected_token_indices.append(idx)
 
-    return (pair_count, pair_to_affected_tokens)
+    return pairs
 
-def merge(lst: List[List[bytes]], pair: Tuple[bytes, bytes], update_list: Set[int]):
+def merge(lst: List[List[bytes]], pair: Tuple[bytes, bytes], update_list: List[int]):
     # TODO: use itertools
     skip = False
     cnt = 0
@@ -77,9 +88,9 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: List[str]):
     vocab = build_initial_vocab(token_list, special_tokens)
     merges = []
     while len(vocab) < vocab_size:
-        pair_count, pair_to_affected_tokens = build_pairs(token_list, count_list)
-        pair = max(pair_count.items(), key = lambda p: (p[1], p[0]))
+        pairs = build_pairs(token_list, count_list)
+        pair = max(pairs.items(), key = lambda p: (p[1].weighted_count, p[0]))
         merges.append((pair[0][0], pair[0][1]))
-        token_list = merge(token_list, pair[0], pair_to_affected_tokens[pair[0]])
+        token_list = merge(token_list, pair[0], pair[1].affected_token_indices)
         vocab[len(vocab)] = b''.join(pair[0])
     return (vocab, merges)
