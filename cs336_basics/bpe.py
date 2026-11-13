@@ -5,6 +5,7 @@ import regex
 import itertools
 from collections import Counter
 from typing import List, Tuple, Dict, Set, Iterator
+from dataclasses import dataclass, field
 
 def read_to_buffer(path: str) -> str:
     with open(path, "r") as f:
@@ -26,10 +27,11 @@ def build_initial_vocab(_input: List[List[bytes]], special_tokens: List[str]) ->
     init.update({ idx + 256: val.encode() for idx, val in enumerate(special_tokens) })
     return init
 
+@dataclass
 class PairState:
-    weighted_count: int
-    affected_token_indices: List[int]
-    last_seen_token_index: int
+    weighted_count: int = 0
+    affected_token_indices: List[int] = field(default_factory=list)
+    last_seen_token_index: int = -1
 
 Pairs = Dict[Tuple[bytes, bytes], PairState]
 
