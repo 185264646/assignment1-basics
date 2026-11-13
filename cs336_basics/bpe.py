@@ -56,14 +56,11 @@ def build_pairs(token_list: List[List[bytes]], count_list: List[int]) -> Pairs:
     return pairs
 
 def merge(lst: List[List[bytes]], pair: Tuple[bytes, bytes], update_list: List[int]) -> List[List[bytes]]:
-    # TODO: use itertools
     skip = False
-    cnt = 0
     for token in (lst[i] for i in update_list):
         tmp = []
         for first, second in itertools.pairwise(itertools.chain(token, [b''])):
             if skip:
-                cnt += 1
                 skip = False
                 continue
             if (first, second) == pair:
@@ -72,7 +69,6 @@ def merge(lst: List[List[bytes]], pair: Tuple[bytes, bytes], update_list: List[i
             else:
                 tmp.append(first)
         token[:] = tmp
-    #print(f"merged {cnt} times")
     return lst
 
 def iter_bytes(b: bytes) -> Iterator[bytes]:
