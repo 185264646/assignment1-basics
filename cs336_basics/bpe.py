@@ -35,7 +35,7 @@ class PairState:
 
 Pairs = Dict[Tuple[bytes, bytes], PairState]
 
-def build_pairs(token_list: List[List[bytes]], count_list: List[int]) -> Pairs:
+def build_init_pairs(token_list: List[List[bytes]], count_list: List[int]) -> Pairs:
     pairs: Pairs = {}
     for idx, token in enumerate(token_list):
         addition = count_list[idx]
@@ -54,6 +54,74 @@ def build_pairs(token_list: List[List[bytes]], count_list: List[int]) -> Pairs:
                     pair_state.affected_token_indices.append(idx)
 
     return pairs
+
+def update_pairs_naive(token_list: List[List[bytes]], count_list: List[int], old_pairs: Pairs, merge_pair: Tuple[bytes, bytes]) -> None:
+    pairs = build_init_pairs(token_list, count_list)
+    old_pairs.clear()
+    old_pairs.update(pairs)
+
+def update_pairs(token_list: List[List[bytes]], count_list: List[int], old_pairs: Pairs, merge_pair: Tuple[bytes, bytes]) -> None:
+    merged_pair = merge_pair[0] + merge_pair[1]
+    recalc_pairs = set()
+
+    for idx in old_pairs[merge_pair].affected_token_indices:
+        token = token_list[idx]
+        addition = count_list[idx]
+
+        for p in itertools.pairwise(token):
+            if merged_pair in p:
+                # p A B q => p AB q, recalc(pA, Bq)
+                # p A B A B q => p AB AB q, recalc(pA, BA, Aq)
+                # p A A q => p AA q, recalc(pA, Aq)
+                # p A A A q => p AA A q, recalc(pA, AA|A, Aq)
+                # p A A A A q => p AA AA q, recalc(pA, AA|AA, Aq)
+
+                # pAB => pA
+                # ABq => Bq
+                # ABAB => BA
+                # pAA => pA
+                # AAq => Aq
+                # AAA => AA|A
+                # AAAA => AA|AA
+                if merge_pair[0] == merge_pair[1] and p[0] == merged_pair and (p[1] == merge_pair[0] or p[1] == p[0]):
+                        recalc_pairs.add((p[0], p[1]))
+                elif p[1] == merged_pair:
+                    if p[0] == p[1]:
+                        recalc_pairs.add((merge_pair[1], merge_pair[0]))
+                    else:
+                        recalc_pairs.add((p[0], merge_pair[0]))
+                else:
+                    recalc_pairs.add((merge_pair[1], p[1]))
+                state = old_pairs.get(p)
+                if state is None:
+                    state = PairState(addition, [idx], idx)
+                    old_pairs[p] = state
+                else:
+                    state.weighted_count += addition
+                    if state.last_seen_token_index != idx:
+                        state.last_seen_token_index = idx
+                        state.affected_token_indices.append(idx)
+
+    del old_pairs[merge_pair]
+    affected_token_indices: Set[int] = set()
+    for pair in recalc_pairs:
+        affected_token_indices.update(old_pairs[pair].affected_token_indices)
+
+    update_state_dict = { k: PairState() for k in recalc_pairs }
+    for idx in sorted(affected_token_indices):
+        token = token_list[idx]
+
+        for p in itertools.pairwise(token):
+            addition = count_list[idx]
+            state = update_state_dict.get(p)
+            if state:
+                state.weighted_count += addition
+                if state.last_seen_token_index != idx:
+                    state.last_seen_token_index = idx
+                    state.affected_token_indices.append(idx)
+
+    old_pairs.update(update_state_dict)
+
 
 def merge(lst: List[List[bytes]], pair: Tuple[bytes, bytes], update_list: List[int]) -> List[List[bytes]]:
     skip = False
@@ -84,11 +152,13 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: List[str]) -> Tu
     token_list = [ [ b for b in iter_bytes(token) ] for token in pretoken_counter.keys() ]
     count_list = [ pretoken_counter[b''.join(token)] for token in token_list ]
     vocab = build_initial_vocab(token_list, special_tokens)
+    pairs = build_init_pairs(token_list, count_list)
     merges = []
     while len(vocab) < vocab_size:
-        pairs = build_pairs(token_list, count_list)
         pair = max(pairs.items(), key = lambda p: (p[1].weighted_count, p[0]))
         merges.append((pair[0][0], pair[0][1]))
         token_list = merge(token_list, pair[0], pair[1].affected_token_indices)
         vocab[len(vocab)] = b''.join(pair[0])
+        update_pairs(token_list, count_list, pairs, pair[0])
+
     return (vocab, merges)
